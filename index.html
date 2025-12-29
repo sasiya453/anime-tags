@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tags App</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --tg-theme-bg-color: #ffffff;
+            --tg-theme-text-color: #222222;
+            --tg-theme-button-color: #3390ec;
+            --tg-theme-button-text-color: #ffffff;
+            --tg-theme-secondary-bg-color: #f4f4f5;
+            --tg-theme-hint-color: #999999;
+        }
+
+        body {
+            background-color: var(--tg-theme-bg-color);
+            color: var(--tg-theme-text-color);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Fixed Header */
+        .header {
+            text-align: center;
+            padding: 20px 16px 10px;
+            width: 100%;
+            box-sizing: border-box;
+            background-color: var(--tg-theme-bg-color);
+            border-bottom: 1px solid var(--tg-theme-secondary-bg-color);
+            flex-shrink: 0;
+            z-index: 10;
+        }
+
+        .logo-container {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            overflow: hidden;
+            margin: 0 auto 8px;
+            background-color: var(--tg-theme-secondary-bg-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .logo-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 700;
+        }
+
+        .count-badge {
+            font-size: 12px;
+            color: var(--tg-theme-hint-color);
+            margin-top: 4px;
+            display: block;
+        }
+
+        .search-container {
+            margin-top: 12px;
+            width: 100%;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 10px 16px;
+            border-radius: 10px;
+            border: none;
+            background-color: var(--tg-theme-secondary-bg-color);
+            color: var(--tg-theme-text-color);
+            font-size: 16px;
+            box-sizing: border-box;
+            outline: none;
+        }
+
+        .search-input:focus {
+            box-shadow: 0 0 0 2px var(--tg-theme-button-color);
+        }
+
+        /* Scrollable List Area */
+        .list-container {
+            width: 100%;
+            max-width: 600px;
+            padding: 10px 16px;
+            box-sizing: border-box;
+            flex: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .tag-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 14px;
+            margin-bottom: 8px;
+            background-color: var(--tg-theme-bg-color);
+            border: 1px solid var(--tg-theme-secondary-bg-color);
+            border-radius: 10px;
+        }
+
+        .tag-text {
+            font-size: 15px;
+            font-weight: 500;
+            word-break: break-word;
+            margin-right: 10px;
+        }
+
+        .copy-btn {
+            background-color: var(--tg-theme-button-color);
+            color: var(--tg-theme-button-text-color);
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            min-width: 60px;
+        }
+
+        .copy-btn.copied {
+            background-color: #4cd964;
+        }
+
+        .status-msg {
+            text-align: center;
+            color: var(--tg-theme-hint-color);
+            padding: 20px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="logo-container">
+            <img src="https://via.placeholder.com/150/3390ec/ffffff?text=Tags" alt="Logo">
+        </div>
+        <h1>Tags</h1>
+        <span class="count-badge" id="countBadge">Initializing...</span>
+        
+        <div class="search-container">
+            <input type="text" class="search-input" id="searchInput" placeholder="Search tags...">
+        </div>
+    </div>
+
+    <div class="list-container" id="listContainer">
+        <div class="status-msg" id="statusMsg">Loading data...</div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        // ======================================================
+        // CONFIGURATION: LOCAL FILE NAME
+        // ======================================================
+        // Since both files are in the same GitHub folder, we just use the filename.
+        const CSV_FILENAME = "danbooru-tags.csv";
+
+        // ======================================================
+        // APP LOGIC
+        // ======================================================
+
+        let allTags = [];
+        let currentList = [];
+        let displayedCount = 0;
+        const BATCH_SIZE = 50;
+
+        const listContainer = document.getElementById('listContainer');
+        const statusMsg = document.getElementById('statusMsg');
+        const searchInput = document.getElementById('searchInput');
+        const countBadge = document.getElementById('countBadge');
+
+        async function loadTags() {
+            try {
+                // Fetch the file relative to index.html
+                const response = await fetch(CSV_FILENAME);
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to load ${CSV_FILENAME} (Status: ${response.status})`);
+                }
+                
+                const csvText = await response.text();
+                allTags = parseCSV(csvText);
+                currentList = allTags;
+                
+                countBadge.textContent = `Found ${allTags.length.toLocaleString()} tags`;
+                
+                // Clear loading message
+                listContainer.innerHTML = '';
+                displayedCount = 0;
+                renderNextBatch();
+
+            } catch (error) {
+                console.error(error);
+                statusMsg.innerHTML = `
+                    <strong>Error loading data</strong><br><br>
+                    Make sure "${CSV_FILENAME}" is uploaded<br>
+                    in the same folder as this index.html file.
+                `;
+                countBadge.textContent = "Error";
+            }
+        }
+
+        function parseCSV(text) {
+            const lines = text.split('\n');
+            const tags = [];
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+                
+                // Split by comma
+                const parts = line.split(',');
+                
+                // Your CSV format: "ID,TagName" -> We want parts[1]
+                if (parts.length >= 2) {
+                    // Remove quotes if present
+                    const tag = parts[1].replace(/^"|"$/g, '').trim();
+                    if(tag) tags.push(tag);
+                } else {
+                    // Fallback for simple list
+                    tags.push(parts[0].trim());
+                }
+            }
+            return tags;
+        }
+
+        function renderNextBatch() {
+            const total = currentList.length;
+            if (displayedCount >= total) return; 
+
+            const fragment = document.createDocumentFragment();
+            const end = Math.min(displayedCount + BATCH_SIZE, total);
+
+            for (let i = displayedCount; i < end; i++) {
+                const tag = currentList[i];
+                const item = createTagItem(tag);
+                fragment.appendChild(item);
+            }
+
+            listContainer.appendChild(fragment);
+            displayedCount = end;
+
+            // Manage "End of list" message
+            const oldEndMsg = document.getElementById('endMsg');
+            if(oldEndMsg) oldEndMsg.remove();
+
+            if (displayedCount >= total && total > 0) {
+                const msg = document.createElement('div');
+                msg.className = 'status-msg';
+                msg.id = 'endMsg';
+                msg.textContent = "End of list";
+                listContainer.appendChild(msg);
+            }
+        }
+
+        function createTagItem(tag) {
+            const item = document.createElement('div');
+            item.className = 'tag-item';
+            
+            const text = document.createElement('span');
+            text.className = 'tag-text';
+            text.textContent = tag;
+
+            const btn = document.createElement('button');
+            btn.className = 'copy-btn';
+            btn.textContent = 'Copy';
+            btn.onclick = () => {
+                navigator.clipboard.writeText(tag);
+                btn.textContent = '✓';
+                btn.classList.add('copied');
+                
+                // Telegram Haptic Feedback
+                if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+
+                setTimeout(() => {
+                    btn.textContent = 'Copy';
+                    btn.classList.remove('copied');
+                }, 1000);
+            };
+
+            item.appendChild(text);
+            item.appendChild(btn);
+            return item;
+        }
+
+        // Infinite Scroll
+        listContainer.addEventListener('scroll', () => {
+            if (listContainer.scrollTop + listContainer.clientHeight >= listContainer.scrollHeight - 100) {
+                renderNextBatch();
+            }
+        });
+
+        // Search
+        searchInput.addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            
+            if (term.length === 0) {
+                currentList = allTags;
+            } else {
+                currentList = allTags.filter(tag => tag.toLowerCase().includes(term));
+            }
+
+            listContainer.innerHTML = '';
+            displayedCount = 0;
+            
+            if (currentList.length === 0) {
+                listContainer.innerHTML = '<div class="status-msg">No tags found</div>';
+            } else {
+                renderNextBatch();
+            }
+        });
+
+        loadTags();
+
+    </script>
+</body>
+</html>
